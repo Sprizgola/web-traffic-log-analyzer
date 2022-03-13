@@ -5,10 +5,10 @@ import pandas as pd
 import logging
 
 from datetime import datetime, timedelta
-from internal_lib.data_processing import parse_raw_log_data
+from internal_lib.data_processing import parse_raw_log_data, extract_features
 
 
-INPUT_PATH = "data/asd"
+INPUT_PATH = "data/log.txt"
 OUTPUT_PATH = "data/data_processed.csv"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s;%(levelname)s;%(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -42,43 +42,9 @@ COLUMNS_TO_GROUP = ["ip", "session_id", "user_agent"]
 # TODO: AGGIUNGERE USER AGENT AL GROUP BY
 df["session_id"] = df.sort_values(["ip", "user_agent"])["new_session"].cumsum()
 
-# FIXME: FIXARE REQUEST COUNT
-# Calcolo i valori aggregati
-df_feature = df.groupby(["session_id"]).agg(
-    session_duration=("timestamp", np.ptp), request_count=("request", "count"),
-    mean_req=("req_duration", np.mean), total_req_size=("size", "sum"))
 
-df_feature["session_duration"] = df_feature["session_duration"].apply(lambda x: x.total_seconds())
-df_feature.loc[df_feature["session_duration"] == 0, "session_duration"] = 30*60
+df_features = extract_features(df)
 
-# La funzione 'count' considera solo i valori non 'nan'
-empty_referer = df.groupby(["session_id"])["timestamp"].count() - df.groupby(["session_id"])["referer"].count()
-# Percentuale di referer nulli nella sessione
-df_feature["pc_referer"] = empty_referer / df.groupby(["session_id"])["timestamp"].count() * 100
-# TODO: migliorare recupero degli status 4XX
-# Percentuale di richieste con errori 4xx
-df["errors_4xx"] = df["status"].apply(lambda x: True if "40" in x else False)
-n_errors_4xx = df.groupby(["session_id"])["errors_4xx"].sum()
-df_feature["pc_error_4xx"] = n_errors_4xx / df.groupby(["session_id"])["timestamp"].count() * 100
 
-# Percentuale di richieste che contengono HEAD
-df["head_req"] = df["request"].apply(lambda x: True if "HEAD" in x else False)
-n_head_req = df.groupby(["session_id"])["head_req"].sum()
-df_feature["pc_head_req"] = n_head_req / df.groupby(["session_id"])["timestamp"].count() * 100
 
-img_tag = [".jpg", ".gif", ".png", ".avif", ".apng", ".svg", ".webp"]
-regex = "|".join([f"\{x}" for x in img_tag])
-
-# Richieste che contengono le immagini
-df["has_img"] = df["request"].str.contains(regex)
-n_img_req = df.groupby(["session_id"])["has_img"].sum()
-df_feature["pg_img_ratio"] = n_img_req / df.groupby(["session_id"])["timestamp"].count()
-
-# Page views
-df_feature["page_views"] = df.groupby(["session_id"])["request"].nunique(dropna=False)
-
-# FIXME: fixare recupero degli user agent -> verificare per i nan
-# Percentuale di richieste sulle pagine date da UA nulli
-df_feature["pc_page_ref_empty"] = df.groupby(["session_id", "request"])["user_agent"].count().reset_index().groupby("session_id").sum()
-df_feature["pc_page_ref_empty"] = ((df_feature["page_views"] - df_feature["pc_page_ref_empty"]) / df_feature["page_views"]) * 100
 print(f"Esecuzione terminata in: {datetime.now() - start_time}")
