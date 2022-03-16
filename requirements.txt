@@ -1,2 +1,4 @@
 lars==1.0
 pandas==1.4.1
+scikit-learn==1.0.2
+matplotlib==3.5.1
