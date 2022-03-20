@@ -5,8 +5,7 @@ import pandas as pd
 import logging
 
 from datetime import datetime, timedelta
-from internal_lib.data_processing import find_sessions, extract_features
-
+from internal_lib.data_processing import find_sessions, extract_features, parse_raw_log_data
 
 INPUT_PATH = "data/log.txt"
 OUTPUT_PATH = "data/data_processed.csv"
@@ -15,13 +14,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s;%(levelname)s;%(mess
 
 start_time = datetime.now()
 
-# parse_raw_log_data(input_path=INPUT_PATH, output_path=OUTPUT_PATH, verbose=True)
 
-# df = pd.read_csv(OUTPUT_PATH)
+# data = parse_raw_log_data(input_path=INPUT_PATH, verbose=True)
+#
+# df_features = extract_features(data)
 
-# df_features = extract_features(df)
-
-df = pd.read_csv("df_feature.csv")
+df = pd.read_csv("parsed_data.txt")
 
 print()
 # print(f"Esecuzione terminata in: {datetime.now() - start_time}")
@@ -63,7 +61,7 @@ for n_clusters in range_n_clusters:
     # The silhouette_score gives the average value for all the samples.
     # This gives a perspective into the density and separation of the formed
     # clusters
-    silhouette_avg = silhouette_score(X, cluster_labels, sample_size=500)
+    silhouette_avg = silhouette_score(X, cluster_labels)
     print(
         "For n_clusters =",
         n_clusters,
