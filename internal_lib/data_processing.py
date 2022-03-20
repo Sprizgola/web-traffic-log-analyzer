@@ -65,7 +65,10 @@ def find_sessions(df: pd.DataFrame):
 
     return df
 
+
 def extract_features(df: pd.DataFrame) -> pd.DataFrame:
+
+    df = find_sessions(df)
 
     # Session duration
     df_feature = df.groupby(["session_id"])["timestamp"].agg(session_duration=np.ptp)
