@@ -7,11 +7,12 @@ import logging
 from datetime import datetime, timedelta
 from internal_lib.data_processing import find_sessions, extract_features, parse_raw_log_data
 
-from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.cluster import KMeans
 
 
-INPUT_PATH = "data/log.txt"
+INPUT_PATH = "data/asd"
 OUTPUT_PATH = "data/data_processed.csv"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s;%(levelname)s;%(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -19,11 +20,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s;%(levelname)s;%(mess
 start_time = datetime.now()
 
 
-# data = parse_raw_log_data(input_path=INPUT_PATH, verbose=True)
-#
-# df_features = extract_features(data)
+data = parse_raw_log_data(input_path=INPUT_PATH, verbose=True)
+
+df_features = extract_features(data)
 
 df = pd.read_csv("parsed_data.txt")
+
+X_raw = df.drop("session_id", axis=1).values
 
 # Effettuo l'encoding delle colonne categoriche
 X_cat = pd.get_dummies(df["has_source"], prefix="cat", drop_first=True).values
@@ -45,33 +48,30 @@ scaler = StandardScaler()
 scaler.fit(data)
 
 X_scaled = scaler.transform(data)
-X_cat_scaled = scaler.fit_transform(X_cat)
-X = np.concatenate([X_scaled, X_cat_scaled], axis=1)
+X_standart = np.concatenate([X_scaled, X_cat], axis=1)
+
+minmax = MinMaxScaler()
+X_norm = minmax.fit_transform(X_raw)
 
 # X NOT SCALED
 X = df[[x for x in df.columns if x != "session_id"]].values
 
-import matplotlib.pyplot as plt
-
-# km = KMeans(
-#     n_clusters=4, init='k-means++',
-#     random_state=42, verbose=2, tol=0.0000001, max_iter=1000)
-
 ssd = list()
 
 K = range(1, 15)
-for k in range(1, 8):
-    km = KMeans(n_clusters=k, init='random',  random_state=42, verbose=1, tol=0.0000000001, max_iter=1000)
-    km = km.fit(X)
-    ssd.append(km.inertia_)
 
-plt.plot([x for x in range(1, 8)], ssd, 'bx-')
-plt.xlabel('k')
-plt.ylabel('Sum_of_squared_distances')
-plt.title('Elbow Method For Optimal k')
-plt.show()
+for data_type, data in zip([X_standart, X_norm], ["standard_scaled", "normalized"]):
+    for k in range(1, 15):
+        km = KMeans(n_clusters=k, init='k-means++',  random_state=42, verbose=1, tol=0.0000000001, max_iter=1000)
+        km = km.fit(data)
+        ssd.append(km.inertia_)
+
+    plt.plot([x for x in range(1, 15)], ssd, 'bx-')
+    plt.xlabel('k')
+    plt.ylabel('Sum_of_squared_distances')
+    plt.title(f'Elbow Method For Optimal k - {data_type}')
+    plt.show()
+    ssd = list()
 
 print(f"Esecuzione terminata in: {datetime.now() - start_time}")
 
-
-print(asd)

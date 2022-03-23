@@ -72,9 +72,11 @@ def find_sessions(df: pd.DataFrame):
     df["req_duration"] = df.groupby(["ip", "user_agent"])["timestamp"].shift(-1) - \
                          df.groupby(["ip", "user_agent"])["timestamp"].shift(0)
 
+    # Differenza tra due sessioni: setto come valore massimo 30m
     df.loc[df["req_duration"] > timedelta(minutes=30), "req_duration"] = timedelta(minutes=30)
 
-    # FIXME: Verificare se assegnare 0 o 30
+    # Per le sessioni con una sola richiesta assegno la durata pari a 0s; per quelle con più richieste la durata
+    # sara' data dalla differenza tra la prima e l'ultima richiesta effettuata nella sessione
     df["req_duration"] = df["req_duration"].apply(lambda x: x.total_seconds() if not pd.isna(x) else 0)
 
     df["new_session"] = df.groupby(["ip", "user_agent"])["timestamp"].diff()
