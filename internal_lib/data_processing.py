@@ -4,43 +4,14 @@ import logging
 import numpy as np
 import pandas as pd
 
-from datetime import timedelta
-
-
-# def parse_raw_log_data(input_path: str, output_path: str, verbose: bool = True) -> None:
-#
-#     raw_data = pd.read_csv(input_path, index_col=False, on_bad_lines="warn").values
-#
-#     regc = re.compile(
-#         '^(\S*).*\[(.*)\]\s"(\S*)\s(\S*)\s([^"]*)"\s(\S*)\s(\S*)\s"([^"]*)"\s"([^"]*)"')
-#
-#     dict_list = list()
-#     for idx, row in enumerate(raw_data):
-#
-#         if verbose:
-#             logging.info(f"Row: {idx}/{len(raw_data)}")
-#
-#         tmp_dict = dict()
-#         m = regc.match(row[0])
-#         if m is None:
-#             continue
-#         tmp_dict["ip"] = m.group(1)
-#         tmp_dict["timestamp"] = m.group(2)
-#         tmp_dict["http_method"] = m.group(3) if m.group(3) != "-" else None
-#         tmp_dict["request"] = m.group(4) if m.group(4) != "-" else None
-#         tmp_dict["http_version"] = m.group(5) if m.group(5) != "-" else None
-#         tmp_dict["status"] = m.group(6) if m.group(6) != "-" else None
-#         tmp_dict["size"] = m.group(7) if m.group(7) != "-" else None
-#         tmp_dict["referer"] = m.group(8) if m.group(8) != "-" else None
-#         tmp_dict["user_agent"] = m.group(9) if m.group(9) != "-" else None
-#
-#         dict_list.append(tmp_dict)
-#
-#     pd.DataFrame(dict_list).to_csv(output_path, index=False)
+from datetime import timedelta, datetime
 
 
 def parse_raw_log_data(input_path: str, verbose: bool = True):
-    data = pd.read_csv(
+
+    idx = int(datetime.now().timestamp())
+
+    data_gen = pd.read_csv(
         input_path,
         sep=r'^(\S*).*\[(.*)\]\s"(\S*)\s(\S*)\s([^"]*)"\s(\S*)\s(\S*)\s"([^"]*)"\s"([^"]*)"',
         engine='python',
@@ -50,41 +21,43 @@ def parse_raw_log_data(input_path: str, verbose: bool = True):
         names=['ip', 'timestamp', 'http_method', 'request', 'http_version', 'status', 'size', 'referer', 'user_agent'],
         dtype={"ip": str, "timestamp": pd.Timestamp, "http_method": str, "request": str,
                "status": str, "size": float, "referer": str, "user_agent": str},
-        verbose=verbose
+        verbose=verbose,
+        chunksize=500000
     )
 
-    data = data[~data["ip"].isna()]
-
-    return data
+    for data in data_gen:
+        data = data[~data["ip"].isna()]
+        data.to_csv(f"./processed_data/processed_log_{idx}.csv", mode="a", index=False)
 
 
 def find_sessions(df: pd.DataFrame):
 
     logging.info("Inizializzo le sessioni")
 
+    df.sort_values(by=["ip", "user_agent", "timestamp"], inplace=True)
+
     df["status"].fillna(0, inplace=True)
     df["size"].fillna(0, inplace=True)
 
     df.loc[:, "timestamp"] = pd.to_datetime(df["timestamp"], format="%d/%b/%Y:%H:%M:%S %z", utc=True)
-    df["ref_date"] = df["timestamp"].apply(lambda x: x.date())
+    df["ref_date"] = df["timestamp"].dt.date
 
-    # Devo raggruppare i dati in sessioni
-    df["req_duration"] = df.groupby(["ip", "user_agent"])["timestamp"].shift(-1) - \
-                         df.groupby(["ip", "user_agent"])["timestamp"].shift(0)
+    df["req_duration"] = df.groupby(["ip", "user_agent"])["timestamp"].diff()
 
-    # Differenza tra due sessioni: setto come valore massimo 30m
-    df.loc[df["req_duration"] > timedelta(minutes=30), "req_duration"] = timedelta(minutes=30)
-
-    # Per le sessioni con una sola richiesta assegno la durata pari a 0s; per quelle con più richieste la durata
+    # Per le sessioni con una sola richiesta assegno la durata pari a 0m; per quelle con più richieste la durata
     # sara' data dalla differenza tra la prima e l'ultima richiesta effettuata nella sessione
-    df["req_duration"] = df["req_duration"].apply(lambda x: x.total_seconds() if not pd.isna(x) else 0)
 
-    df["new_session"] = df.groupby(["ip", "user_agent"])["timestamp"].diff()
-    df["new_session"] = np.where((df["new_session"] > timedelta(minutes=30)) | (df["new_session"].isnull()), 1, 0)
-
+    df["new_session"] = np.where((df["req_duration"] > timedelta(minutes=30)) | (df["req_duration"].isnull()), 1, 0)
     df["session_id"] = df.sort_values(["ip", "user_agent"])["new_session"].cumsum()
 
-    logging.info(f"Ricavate {df.index.size} sessioni.")
+    # Recupero i secondi
+    df["req_duration"] = df["req_duration"] / np.timedelta64(1, "s")
+    # Shifto di una riga la durata delle richieste calcolata precedentemente con 'diff'. Assegno poi 0 come valore
+    # di default per una richiesta isolata o per un ultima richiesta effettuata
+    df["req_duration"] = df.groupby("session_id")["req_duration"].shift(-1)
+    df["req_duration"].fillna(0, inplace=True)
+
+    logging.info(f"Ricavate {df.session_id.unique().size} sessioni.")
 
     return df
 
@@ -95,9 +68,17 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
 
     logging.info("Estraggo le features")
 
+    features_name = ["session_duration", "requests_count", "mean_request", "total_size", "pc_referer", "pc_error_4xx",
+                     "pc_head_req", "pg_img_ratio", "page_views", "pc_page_ref_empty", "login_actions",
+                     "internal_search", "add_to_cart", "has_source", "product_views", "conditions_views", "homepage_views"]
+
+    empty_matrix = np.empty((df["session_id"].unique().size, len(features_name)))
+    empty_matrix[:] = np.nan
+
+    df_feature = pd.DataFrame(index=df.session_id.unique(), data=empty_matrix, columns=features_name)
     logging.info("Session duration")
     # Session duration
-    df_feature = df.groupby(["session_id"])["timestamp"].agg(session_duration=np.ptp)
+    df_feature["session_duration"] = df.groupby(["session_id"])["timestamp"].agg(["min", "max"]).diff(axis=1)["max"]
 
     logging.info("Requests count")
     # Request count
@@ -111,14 +92,15 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
     # Total request size (byte)
     df_feature["total_size"] = df.groupby(["session_id"])["size"].sum()
 
-    df_feature["session_duration"] = df_feature["session_duration"].apply(lambda x: x.total_seconds())
+    df_feature["session_duration"] = df_feature["session_duration"] / np.timedelta64(1, "s")
     # df_feature.loc[df_feature["session_duration"] == 0, "session_duration"] = 30*60
 
     logging.info("Empty referer requests percent")
     # La funzione 'count' considera solo i valori non 'nan'
-    empty_referer = df.groupby(["session_id"])["timestamp"].count() - df.groupby(["session_id"])["referer"].count()
+    df_feature["pc_referer"] = df.groupby(["session_id"])["timestamp"].count() - df.groupby(["session_id"])["referer"].count()
     # Percentuale di referer nulli nella sessione
-    df_feature["pc_referer"] = empty_referer / df.groupby(["session_id"])["timestamp"].count() * 100
+    df_feature["pc_referer"] /= df.groupby(["session_id"])["timestamp"].count()
+    df_feature["pc_referer"] *= 100
 
     logging.info("4XX error codes percent")
     # Percentuale di richieste con errori 4xx
@@ -142,13 +124,15 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
     df_feature["pg_img_ratio"] = n_img_req / df.groupby(["session_id"])["timestamp"].count()
 
     logging.info("Page views")
-    # Page views
-    df_feature["page_views"] = df.groupby(["session_id"])["request"].nunique(dropna=False)
+    # Page views -> HTML
+    df["page_views"] = df["request"].str.contains(".html|.htm")
+    df_feature["page_views"] = df.groupby(["session_id"])["page_views"].sum()
 
     logging.info("Page with empty referer percent")
     # Percentuale di richieste sulle pagine date da UA nulli
-    df_feature["pc_page_ref_empty"] = df.groupby(["session_id", "request"])["referer"].count().reset_index().groupby("session_id").sum()
-    df_feature["pc_page_ref_empty"] = ((df_feature["page_views"] - df_feature["pc_page_ref_empty"]) / df_feature["page_views"]) * 100
+    df_feature["pc_page_ref_empty"] = df[df["page_views"]].referer.isnull().groupby([df["session_id"]]).sum()
+    df_feature["pc_page_ref_empty"] /= df_feature["page_views"]
+    df_feature["pc_page_ref_empty"] *= 100
 
     logging.info("E-Commerce features")
     """
@@ -156,9 +140,9 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     cart_actions = ["aggiungi_al_carrello.php"]
-    login_operations = ["action=login", "msg=login-error"]
+    login_operations = ["action=login"]
     internal_search_engine = ["search.html\?q", "search-by-bike.html\?"]
-    source = ["utm_source"]
+
     # TODO: Number of views of pages informing about the store and the trading company -> Non presente
     # TODO: Number of views of pages with entertainment contents -> Non presente
     # TODO: Number of other page views -> Da chiarire
@@ -172,17 +156,19 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
     logging.info("Internal search actions")
     # Number of searches using the internal search engine
     df["internal_search"] = df["request"].str.contains("|".join(internal_search_engine))
-    df_feature["internal_search"] = df.groupby("session_id")["internal_search"].sum().fillna(0)
+    df_feature["internal_search"] = df.groupby("session_id")["internal_search"].sum()
 
     logging.info("Cart actions")
     # Number of operations of adding a product to the shopping cart
     df["add_to_cart"] = df["request"].str.contains("|".join(cart_actions))
-    df_feature["add_to_cart"] = df.groupby("session_id")["add_to_cart"].sum().fillna(0)
+    df_feature["add_to_cart"] = df.groupby("session_id")["add_to_cart"].sum()
 
     logging.info("Request with 'source' session")
+    # Check https://support.google.com/analytics/answer/1033863#zippy=%2Cin-this-article
     # Whether a “source” of the session is specified
-    df["has_source"] = df["request"].str.contains("|".join(source))
+    df["has_source"] = df["request"].str.contains("utm_?")
     df_feature["has_source"] = df.groupby("session_id")["has_source"].sum() > 0
+    df_feature["has_source"] = df_feature["has_source"].astype(int)
 
     # TODO: Whether the session ended with a purchase
     # braintree.php?lang = it & payment = yes
