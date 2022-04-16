@@ -62,7 +62,7 @@ def find_sessions(df: pd.DataFrame):
     return df
 
 
-def extract_features(df: pd.DataFrame) -> pd.DataFrame:
+def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
 
     df = find_sessions(df)
 
@@ -133,6 +133,8 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
     df_feature["pc_page_ref_empty"] = df[df["page_views"]].referer.isnull().groupby([df["session_id"]]).sum()
     df_feature["pc_page_ref_empty"] /= df_feature["page_views"]
     df_feature["pc_page_ref_empty"] *= 100
+    # Effettuo il fill na per le pagine che non hanno referer
+    df_feature["pc_page_ref_empty"].fillna(0, inplace=True)
 
     logging.info("E-Commerce features")
     """
@@ -189,5 +191,5 @@ def extract_features(df: pd.DataFrame) -> pd.DataFrame:
     df["homepage_views"] = df["request"].str.contains(homepage_regex)
     df_feature["homepage_views"] = df.groupby("session_id")["homepage_views"].sum()
 
-    return df_feature
+    return df_feature, df[["session_id", "ip", "user_agent"]].to_numpy()
 

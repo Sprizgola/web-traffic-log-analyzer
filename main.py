@@ -19,15 +19,35 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s;%(levelname)s;%(mess
 
 start_time = datetime.now()
 
-
+#
 # parse_raw_log_data(input_path=INPUT_PATH, verbose=True)
-
+#
 # data = pd.read_csv("processed_data/processed_log_1648998818.csv")
 # data = data[data["timestamp"] != "timestamp"]
 #
-# df_features = extract_features(data)
+# df_features, df_labels = extract_features(data)
+# idx = int(datetime.now().timestamp())
+#
+# df_features.to_csv(f"./parsed_data/parsed_data_{idx}.csv", index="session_id")
+# df_labels.to_csv(f"./parsed_data/labels_{idx}.csv", index="session_id")
 
-df = pd.read_csv("parsed_data.csv", index_col="session_id")
+idx = 1
+df = pd.read_csv(f"./parsed_data/parsed_data_{idx}.csv", index_col="session_id")
+
+# Describe dataframe
+
+for col in df.columns:
+    nonzero = df[df[col] > 0][col].count()
+    zeros = df[df[col] == 0][col].count()
+    print(f"Col: {col} - Non zero: {nonzero/df.shape[0]*100:.2f} - Zero-value: {zeros/df.shape[0]*100:.2f}")
+
+
+# column_to_drop = ["conditions_views", "pc_head_req", ]
+# Effettuo il 'cap' degli outlier considerando la colonna "session_duration"
+# Limite superiore: 1h -> 3600 s
+upper_lim = 60 * 60
+
+df.loc[df['session_duration'] >= upper_lim, "session_duration"] = upper_lim
 
 # Effettuo lo scaling delle variabili non categoriche
 numerical_features = ['session_duration', 'requests_count', 'mean_request', 'total_size',
@@ -42,7 +62,7 @@ scaler = StandardScaler()
 scaler.fit(data)
 
 X_scaled = scaler.transform(data)
-X_standart = np.concatenate([X_scaled, cat_col], axis=1)
+X_standard = np.concatenate([X_scaled, cat_col], axis=1)
 
 minmax = MinMaxScaler()
 X_norm = minmax.fit_transform(np.concatenate([data, cat_col], axis=1))
