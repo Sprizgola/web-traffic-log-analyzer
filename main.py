@@ -1,5 +1,5 @@
+import json
 import re
-
 import numpy as np
 import pandas as pd
 import logging
@@ -8,14 +8,17 @@ from datetime import datetime, timedelta
 from internal_lib.data_processing import find_sessions, extract_features, parse_raw_log_data
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.cluster import KMeans
 
+with open("bot_list.json", "r") as f:
+    ua_list = json.load(f)
 
 INPUT_PATH = "data/log_full.txt"
 OUTPUT_PATH = "data/data_processed.csv"
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s;%(levelname)s;%(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
 start_time = datetime.now()
 
@@ -32,61 +35,110 @@ start_time = datetime.now()
 # df_labels.to_csv(f"./parsed_data/labels_{idx}.csv", index="session_id")
 
 idx = 1
+
 df = pd.read_csv(f"./parsed_data/parsed_data_{idx}.csv", index_col="session_id")
+df.fillna(0, inplace=True)
+
+df_labels = pd.read_csv(f"./parsed_data/labels_{idx}.csv", index_col="session_id")
+df_labels.drop("Unnamed: 0", axis=1, inplace=True)
 
 # Describe dataframe
+columns_to_keep = list()
 
+
+# for col in df.columns:
+#     nonzero = df[df[col] > 0][col].count()
+#     zeros = df[df[col] == 0][col].count()
+#     print(f"Col: {col} - Non zero: {nonzero/df.shape[0]*100:.2f} - Zero-value: {zeros/df.shape[0]*100:.2f}")
+#     if nonzero/df.shape[0]*100 > 10:
+#         columns_to_keep.append(col)
+#
+# df = df[columns_to_keep]
+#
+# Effettuo il cap degli outliers
 for col in df.columns:
-    nonzero = df[df[col] > 0][col].count()
-    zeros = df[df[col] == 0][col].count()
-    print(f"Col: {col} - Non zero: {nonzero/df.shape[0]*100:.2f} - Zero-value: {zeros/df.shape[0]*100:.2f}")
+    if col in ["session_duration", "requests_count", "mean_request", "total_size", "page_views"]:
+        threshold = df[col].quantile(.99)
 
+        df.loc[df[col] > threshold, col] = threshold
 
-# column_to_drop = ["conditions_views", "pc_head_req", ]
-# Effettuo il 'cap' degli outlier considerando la colonna "session_duration"
-# Limite superiore: 1h -> 3600 s
-upper_lim = 60 * 60
-
-df.loc[df['session_duration'] >= upper_lim, "session_duration"] = upper_lim
-
-# Effettuo lo scaling delle variabili non categoriche
-numerical_features = ['session_duration', 'requests_count', 'mean_request', 'total_size',
-                      'pc_referer', 'pc_error_4xx', 'pc_head_req', 'pg_img_ratio',
-                      'page_views', 'pc_page_ref_empty', 'login_actions', 'internal_search',
-                      'add_to_cart', 'has_source', 'product_views', 'conditions_views', 'homepage_views']
-
-data = df[numerical_features].fillna(0).values
-cat_col = df.has_source.values.reshape(data.shape[0], 1)
+data = df.values
 
 scaler = StandardScaler()
 scaler.fit(data)
 
 X_scaled = scaler.transform(data)
-X_standard = np.concatenate([X_scaled, cat_col], axis=1)
 
-minmax = MinMaxScaler()
-X_norm = minmax.fit_transform(np.concatenate([data, cat_col], axis=1))
+km = KMeans(n_clusters=3, init='k-means++', verbose=1, tol=0.0000000001, max_iter=100)
 
-# X NOT SCALED
-X = df[[x for x in df.columns if x != "session_id"]].values
+km.fit(X_scaled)
 
-ssd = list()
+df["labels"] = km.labels_
 
-K = range(1, 15)
+df = df.sample(frac=1)
 
-for data, data_type in zip([X_norm], ["normalized"]):
-    for k in K:
-        logging.info(f"K = {k}")
-        km = KMeans(n_clusters=k, init='k-means++',  random_state=42, verbose=1, tol=0.0000000001, max_iter=1000)
-        km = km.fit(data)
-        ssd.append(km.inertia_)
+# data = df[:50000]
 
-    plt.plot([x for x in K], ssd, 'bx-')
-    plt.xlabel('k')
-    plt.ylabel('Sum_of_squared_distances')
-    plt.title(f'Elbow Method For Optimal k - {data_type}')
-    plt.show()
-    ssd = list()
+# sns.set_style("whitegrid")
+# sns.pairplot(data, hue="labels")
+# plt.show()
+
+# Concateno al dataframe gli ip/user_agents
+df_cluster = df.merge(df_labels, left_index=True, right_index=True)
+df_cluster["user_agent"].fillna("-", inplace=True)
+df_cluster["user_agent"] = df_cluster["user_agent"].str.lower()
+
+n_classes = len(df_cluster["labels"].unique())
+ua_list = [x.lower() for x in ua_list]
+df_size = df_cluster.shape[0]
+description_list = list()
+for i in range(n_classes):
+    sub_df = df_cluster[df_cluster.labels == i]
+    samples = sub_df.shape[0]
+    n_bot = sub_df[sub_df["user_agent"].str.contains("|".join(map(re.escape, ua_list)))].shape[0]
+    not_bot = samples - n_bot
+
+    logging.info(f"Label: {i}\nPerc. samples: {samples/df_size*100:.2f}\nPerc. bot: {n_bot/samples*100:.2f}\nPerc. users: {not_bot/samples*100:.2f}")
+
+    for col in sub_df.columns:
+        if col not in ["session_duration", "requests_count", "mean_request", "total_size", "pc_referer", "pc_page_ref_empty"]:
+            continue
+        logging.info(f"Col: {col} - Mean: {sub_df[col].mean():.2f} - Min: {sub_df[col].min():.2f} - Max: {sub_df[col].max():.2f}")
+
+    logging.info("\n******************************************************")
+label_1 = df_cluster[df_cluster.labels == 1]
+
+label_1[label_1["user_agent"].str.contains("Mozilla/")]["user_agent"].unique()
 
 print(f"Esecuzione terminata in: {datetime.now() - start_time}")
+
+from sklearn.feature_extraction.text import CountVectorizer
+vect = CountVectorizer(min_df=1, lowercase=True)
+
+X = vect.fit_transform(ua_list)
+cols_bot = vect.get_feature_names()
+
+X = vect.fit_transform(sub_df["user_agent"])
+cols_ua = vect.get_feature_names()
+
+common_cols_idx = [True if col in cols_ua else False for i, col in enumerate(cols_bot)]
+
+sub_df['is_bot'] = (X.toarray()[:, common_cols_idx] == 1).any(1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
