@@ -13,17 +13,6 @@ import pandas as pd
 
 np.random.seed(42)
 
-
-def outlier_treatment(datacolumn):
-    sorted(datacolumn)
-    Q1,Q3 = np.percentile(datacolumn, [25, 75])
-    IQR = Q3 - Q1
-    lower_range = Q1 - (1.5 * IQR)
-    upper_range = Q3 + (1.5 * IQR)
-
-    return lower_range, upper_range
-
-
 df = pd.read_csv("./parsed_data/parsed_data_1.csv", index_col="session_id")
 
 # upper_lim = 60 * 60

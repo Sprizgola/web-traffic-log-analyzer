@@ -1,10 +1,12 @@
 import json
 import re
+import multiprocessing
 import numpy as np
 import pandas as pd
 import logging
 
 from datetime import datetime, timedelta
+from ast import literal_eval
 from internal_lib.data_processing import find_sessions, extract_features, parse_raw_log_data
 
 import matplotlib.pyplot as plt
@@ -12,118 +14,131 @@ import seaborn as sns
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.cluster import KMeans
 
-with open("bot_list.json", "r") as f:
-    ua_list = json.load(f)
+with open("user_agents.txt", "r") as f:
+    ua_list = literal_eval(f.read())
+    ua_list = [x.lower() for x in ua_list]
 
-INPUT_PATH = "data/log_full.txt"
-OUTPUT_PATH = "data/data_processed.csv"
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
-start_time = datetime.now()
-
-#
-# parse_raw_log_data(input_path=INPUT_PATH, verbose=True)
-#
-# data = pd.read_csv("processed_data/processed_log_1648998818.csv")
-# data = data[data["timestamp"] != "timestamp"]
-#
-# df_features, df_labels = extract_features(data)
-# idx = int(datetime.now().timestamp())
-#
-# df_features.to_csv(f"./parsed_data/parsed_data_{idx}.csv", index="session_id")
-# df_labels.to_csv(f"./parsed_data/labels_{idx}.csv", index="session_id")
-
-idx = 1
-
-df = pd.read_csv(f"./parsed_data/parsed_data_{idx}.csv", index_col="session_id")
-df.fillna(0, inplace=True)
-
-df_labels = pd.read_csv(f"./parsed_data/labels_{idx}.csv", index_col="session_id")
-df_labels.drop("Unnamed: 0", axis=1, inplace=True)
-
-# Describe dataframe
-columns_to_keep = list()
+regex = "|".join([f"{x}" for x in ua_list])
+regex = re.compile(regex)
 
 
-# for col in df.columns:
-#     nonzero = df[df[col] > 0][col].count()
-#     zeros = df[df[col] == 0][col].count()
-#     print(f"Col: {col} - Non zero: {nonzero/df.shape[0]*100:.2f} - Zero-value: {zeros/df.shape[0]*100:.2f}")
-#     if nonzero/df.shape[0]*100 > 10:
-#         columns_to_keep.append(col)
-#
-# df = df[columns_to_keep]
-#
-# Effettuo il cap degli outliers
-for col in df.columns:
-    if col in ["session_duration", "requests_count", "mean_request", "total_size", "page_views"]:
-        threshold = df[col].quantile(.99)
+def str_contain(s: str):
+    global regex
 
-        df.loc[df[col] > threshold, col] = threshold
+    return bool(regex.search(s))
 
-data = df.values
 
-scaler = StandardScaler()
-scaler.fit(data)
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
 
-X_scaled = scaler.transform(data)
+    INPUT_PATH = "data/log_full.txt"
+    OUTPUT_PATH = "data/data_processed.csv"
 
-km = KMeans(n_clusters=3, init='k-means++', verbose=1, tol=0.0000000001, max_iter=100)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-km.fit(X_scaled)
+    start_time = datetime.now()
 
-df["labels"] = km.labels_
+    #
+    # parse_raw_log_data(input_path=INPUT_PATH, verbose=True)
+    #
+    # data = pd.read_csv("processed_data/processed_log_1648998818.csv")
+    # data = data[data["timestamp"] != "timestamp"]
+    #
+    # df_features, df_labels = extract_features(data)
+    # idx = int(datetime.now().timestamp())
+    #
+    # df_features.to_csv(f"./parsed_data/parsed_data_{idx}.csv", index="session_id")
+    # df_labels.to_csv(f"./parsed_data/labels_{idx}.csv", index="session_id")
 
-df = df.sample(frac=1)
+    idx = 1
 
-# data = df[:50000]
+    df = pd.read_csv(f"./parsed_data/parsed_data_{idx}.csv", index_col="session_id")
+    df.fillna(0, inplace=True)
 
-# sns.set_style("whitegrid")
-# sns.pairplot(data, hue="labels")
-# plt.show()
+    df_labels = pd.read_csv(f"./parsed_data/labels_{idx}.csv", index_col="session_id")
+    df_labels.drop("Unnamed: 0", axis=1, inplace=True)
 
-# Concateno al dataframe gli ip/user_agents
-df_cluster = df.merge(df_labels, left_index=True, right_index=True)
-df_cluster["user_agent"].fillna("-", inplace=True)
-df_cluster["user_agent"] = df_cluster["user_agent"].str.lower()
+    is_bot = pd.read_csv("is_bot.csv", index_col="session_id")
 
-n_classes = len(df_cluster["labels"].unique())
-ua_list = [x.lower() for x in ua_list]
-df_size = df_cluster.shape[0]
-description_list = list()
-for i in range(n_classes):
-    sub_df = df_cluster[df_cluster.labels == i]
-    samples = sub_df.shape[0]
-    n_bot = sub_df[sub_df["user_agent"].str.contains("|".join(map(re.escape, ua_list)))].shape[0]
-    not_bot = samples - n_bot
+    # Describe dataframe
+    columns_to_keep = list()
 
-    logging.info(f"Label: {i}\nPerc. samples: {samples/df_size*100:.2f}\nPerc. bot: {n_bot/samples*100:.2f}\nPerc. users: {not_bot/samples*100:.2f}")
+    # for col in df.columns:
+    #     nonzero = df[df[col] > 0][col].count()
+    #     zeros = df[df[col] == 0][col].count()
+    #     print(f"Col: {col} - Non zero: {nonzero/df.shape[0]*100:.2f} - Zero-value: {zeros/df.shape[0]*100:.2f}")
+    #     if nonzero/df.shape[0]*100 > 10:
+    #         columns_to_keep.append(col)
+    #
+    # df = df[columns_to_keep]
 
-    for col in sub_df.columns:
-        if col not in ["session_duration", "requests_count", "mean_request", "total_size", "pc_referer", "pc_page_ref_empty"]:
-            continue
-        logging.info(f"Col: {col} - Mean: {sub_df[col].mean():.2f} - Min: {sub_df[col].min():.2f} - Max: {sub_df[col].max():.2f}")
+    # Effettuo il cap degli outliers
+    for col in df.columns:
+        if col in ["session_duration", "requests_count", "mean_request", "total_size", "page_views"]:
+            threshold = df[col].quantile(.99)
 
-    logging.info("\n******************************************************")
-label_1 = df_cluster[df_cluster.labels == 1]
+            df.loc[df[col] > threshold, col] = threshold
 
-label_1[label_1["user_agent"].str.contains("Mozilla/")]["user_agent"].unique()
+    data = df.values
 
-print(f"Esecuzione terminata in: {datetime.now() - start_time}")
+    scaler = StandardScaler()
+    scaler.fit(data)
 
-from sklearn.feature_extraction.text import CountVectorizer
-vect = CountVectorizer(min_df=1, lowercase=True)
+    X_scaled = scaler.transform(data)
 
-X = vect.fit_transform(ua_list)
-cols_bot = vect.get_feature_names()
+    clusters_range = [5, 50, 761]
+    for n_cluster in clusters_range:
 
-X = vect.fit_transform(sub_df["user_agent"])
-cols_ua = vect.get_feature_names()
+        km = KMeans(n_clusters=n_cluster, init='k-means++', verbose=0, tol=0.0000000001, max_iter=100, random_state=42)
 
-common_cols_idx = [True if col in cols_ua else False for i, col in enumerate(cols_bot)]
+        km.fit(X_scaled)
 
-sub_df['is_bot'] = (X.toarray()[:, common_cols_idx] == 1).any(1)
+        df["labels"] = km.labels_
+
+        df = df.sample(frac=1)
+
+        # data = df[:50000]
+
+        # sns.set_style("whitegrid")
+        # sns.pairplot(data, hue="labels")
+        # plt.show()
+
+        # Concateno al dataframe gli ip/user_agents
+        df_cluster = df.merge(df_labels, left_index=True, right_index=True)
+        df_cluster["user_agent"].fillna("-", inplace=True)
+        df_cluster["user_agent"] = df_cluster["user_agent"].str.lower()
+        #
+        n_classes = len(df_cluster["labels"].unique())
+        df_size = df_cluster.shape[0]
+
+        # user_agents = df_cluster["user_agent"].values.tolist()
+        # print("Inizio multiprocessing")
+        # with multiprocessing.Pool(multiprocessing.cpu_count() - 1 or 1) as pool:
+        #     result = pool.map(str_contain, user_agents)
+
+        df_cluster = pd.concat([df_cluster.sort_index(), is_bot.sort_index()], axis=1)
+
+        logging.info(f"Cluster: {n_cluster}")
+
+        for i in range(n_classes):
+            sub_df = df_cluster[df_cluster.labels == i]
+
+            samples = sub_df.shape[0]
+            n_bot = sub_df["is_bot"].sum()
+            not_bot = samples - n_bot
+
+            logging.info(f"Label: {i}\nPerc. samples: {samples/df_size*100:.2f}\n"
+                         f"Perc. bot: {n_bot/samples*100:.2f}\n"
+                         f"Perc. users: {not_bot/samples*100:.2f}")
+
+            for col in sub_df.columns:
+                if col not in ["session_duration", "requests_count", "mean_request", "total_size", "pc_referer", "pc_page_ref_empty"]:
+                    continue
+                logging.info(f"Col: {col} - Mean: {sub_df[col].mean():.2f} - Min: {sub_df[col].min():.2f} - Max: {sub_df[col].max():.2f}")
+
+        logging.info("\n******************************************************")
+
+    print(f"Esecuzione terminata in: {datetime.now() - start_time}")
 
 
 
