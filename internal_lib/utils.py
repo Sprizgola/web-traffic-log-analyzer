@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import pandas as pd
 
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples, silhouette_score
@@ -126,3 +127,22 @@ def compute_and_plot_elbow(X: np.array, n_clusters: int):
     plt.ylabel('Sum_of_squared_distances')
     plt.title(f'Elbow Method For Optimal k')
     plt.show()
+
+
+def print_df_cluster_info(df: pd.DataFrame):
+
+    labels = df["labels"].unique()
+
+    for i in labels:
+        sub_df = df[df.labels == i]
+
+        samples = sub_df.shape[0]
+        n_bot = sub_df["is_bot"].sum()
+        not_bot = samples - n_bot
+
+        print(f"Label: {i}\nPerc. samples: {samples/df.shape[0]*100:.4f}\n"
+                     f"Perc. bot: {n_bot/samples*100:.4f}\n"
+                     f"Perc. users: {not_bot/samples*100:.4f}")
+
+        # for col in sub_df.columns:
+        #     print(f"Col: {col} - Mean: {sub_df[col].mean():.4f} - Min: {sub_df[col].min():.2f} - Max: {sub_df[col].max():.4f}")

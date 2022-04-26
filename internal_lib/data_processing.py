@@ -7,9 +7,7 @@ import pandas as pd
 from datetime import timedelta, datetime
 
 
-def parse_raw_log_data(input_path: str, verbose: bool = True):
-
-    idx = int(datetime.now().timestamp())
+def parse_raw_log_data(input_path: str, output_path: str, verbose: bool = True):
 
     data_gen = pd.read_csv(
         input_path,
@@ -27,7 +25,7 @@ def parse_raw_log_data(input_path: str, verbose: bool = True):
 
     for data in data_gen:
         data = data[~data["ip"].isna()]
-        data.to_csv(f"./processed_data/processed_log_{idx}.csv", mode="a", index=False)
+        data.to_csv(output_path, mode="a", index=False)
 
 
 def find_sessions(df: pd.DataFrame):
@@ -90,6 +88,8 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
 
     logging.info("Total request data size")
     # Total request size (byte)
+    df.loc[df["size"] == "-", "size"] = 0
+    df["size"] = df["size"].astype(float)
     df_feature["total_size"] = df.groupby(["session_id"])["size"].sum()
 
     df_feature["session_duration"] = df_feature["session_duration"] / np.timedelta64(1, "s")
@@ -191,5 +191,5 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
     df["homepage_views"] = df["request"].str.contains(homepage_regex)
     df_feature["homepage_views"] = df.groupby("session_id")["homepage_views"].sum()
 
-    return df_feature, df[["session_id", "ip", "user_agent"]].to_numpy()
+    return df_feature, df[["session_id", "ip", "user_agent"]].groupby(["session_id"]).first().reset_index()
 
