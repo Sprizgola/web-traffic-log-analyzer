@@ -131,18 +131,20 @@ def compute_and_plot_elbow(X: np.array, n_clusters: int):
 
 def print_df_cluster_info(df: pd.DataFrame):
 
-    labels = df["labels"].unique()
+    labels = df["predict_label"].unique()
 
     for i in labels:
-        sub_df = df[df.labels == i]
+        sub_df = df[df.predict_label == i]
 
         samples = sub_df.shape[0]
         n_bot = sub_df["is_bot"].sum()
         not_bot = samples - n_bot
 
-        print(f"Label: {i}\nPerc. samples: {samples/df.shape[0]*100:.4f}\n"
-                     f"Perc. bot: {n_bot/samples*100:.4f}\n"
-                     f"Perc. users: {not_bot/samples*100:.4f}")
+        print(f"Label: {i}\n"
+              f"N° samples with label '{i}': {sub_df.shape[0]}\n"
+              f"Perc. samples: {samples/df.shape[0]*100:.4f}\n"
+              f"Perc. bot: {n_bot/samples*100:.4f}\n"
+              f"Perc. users: {not_bot/samples*100:.4f}")
 
         # for col in sub_df.columns:
         #     print(f"Col: {col} - Mean: {sub_df[col].mean():.4f} - Min: {sub_df[col].min():.2f} - Max: {sub_df[col].max():.4f}")

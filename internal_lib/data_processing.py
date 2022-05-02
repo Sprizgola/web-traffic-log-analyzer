@@ -2,12 +2,22 @@ import re
 import logging
 
 import numpy as np
+import pandas
 import pandas as pd
 
 from datetime import timedelta, datetime
 
 
 def parse_raw_log_data(input_path: str, output_path: str, verbose: bool = True):
+    """
+    This function parse a raw Apache access-log text file into a Pandas dataframe, with each field being represented
+    by a column.
+    More info on Apache access-log format here:
+    :param input_path: str -> path to the raw log file
+    :param output_path: str -> path to save the file
+    :param verbose:
+    :return:
+    """
 
     data_gen = pd.read_csv(
         input_path,
@@ -18,23 +28,33 @@ def parse_raw_log_data(input_path: str, output_path: str, verbose: bool = True):
         usecols=[1, 2, 3, 4, 5, 6, 7, 8, 9],
         names=['ip', 'timestamp', 'http_method', 'request', 'http_version', 'status', 'size', 'referer', 'user_agent'],
         dtype={"ip": str, "timestamp": pd.Timestamp, "http_method": str, "request": str,
-               "status": str, "size": float, "referer": str, "user_agent": str},
+               "status": str, "size": str, "referer": str, "user_agent": str},
         verbose=verbose,
         chunksize=500000
     )
 
     for data in data_gen:
         data = data[~data["ip"].isna()]
-        data.to_csv(output_path, mode="a", index=False)
+
+        data.to_csv(output_path, mode="a", index=False, header=True)
 
 
 def find_sessions(df: pd.DataFrame):
+    """
+    This function allow to find the session for each (ip, user_agent).
+    The session is computed by grouping each request by ip and user_agent with the condition that the time between
+    two adjacent requests cannot exceed 30 minutes.
 
+    :param df: pandas.DataFrame containing the parsed log
+    :return: previous dataframe with the session_id label
+    """
     logging.info("Inizializzo le sessioni")
+
+    df.drop_duplicates(inplace=True)
 
     df.sort_values(by=["ip", "user_agent", "timestamp"], inplace=True)
 
-    df["status"].fillna(0, inplace=True)
+    # df["status"].fillna(0, inplace=True)
     df["size"].fillna(0, inplace=True)
 
     df.loc[:, "timestamp"] = pd.to_datetime(df["timestamp"], format="%d/%b/%Y:%H:%M:%S %z", utc=True)
@@ -61,7 +81,13 @@ def find_sessions(df: pd.DataFrame):
 
 
 def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
-
+    """
+    This function allow to retrieve the features from a dataframe containing the parsed log.
+    :param df: pandas.DataFrame containing the parsed log
+    :return: (pandas.DataFrame, pandas.DataFrame)
+            - Dataframe containing the extracted features
+            - Dataframe containing the user agent associated to each session_id
+    """
     df = find_sessions(df)
 
     logging.info("Estraggo le features")
@@ -70,7 +96,7 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
                      "pc_head_req", "pg_img_ratio", "page_views", "pc_page_ref_empty", "login_actions",
                      "internal_search", "add_to_cart", "has_source", "product_views", "conditions_views", "homepage_views"]
 
-    empty_matrix = np.empty((df["session_id"].unique().size, len(features_name)))
+    empty_matrix = np.empty((df["session_id"].nunique(), len(features_name)))
     empty_matrix[:] = np.nan
 
     df_feature = pd.DataFrame(index=df.session_id.unique(), data=empty_matrix, columns=features_name)
@@ -93,7 +119,6 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
     df_feature["total_size"] = df.groupby(["session_id"])["size"].sum()
 
     df_feature["session_duration"] = df_feature["session_duration"] / np.timedelta64(1, "s")
-    # df_feature.loc[df_feature["session_duration"] == 0, "session_duration"] = 30*60
 
     logging.info("Empty referer requests percent")
     # La funzione 'count' considera solo i valori non 'nan'
@@ -104,6 +129,7 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
 
     logging.info("4XX error codes percent")
     # Percentuale di richieste con errori 4xx
+    df["status"] = df["status"].astype("str")
     df["errors_4xx"] = df["status"].str.contains("4[0-9]{2}")
     n_errors_4xx = df.groupby(["session_id"])["errors_4xx"].sum()
     df_feature["pc_error_4xx"] = n_errors_4xx / df.groupby(["session_id"])["timestamp"].count() * 100
@@ -125,7 +151,7 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
 
     logging.info("Page views")
     # Page views -> HTML
-    df["page_views"] = df["request"].str.contains(".html|.htm")
+    df["page_views"] = df["request"].str.contains(".html|.htm", na=False)
     df_feature["page_views"] = df.groupby(["session_id"])["page_views"].sum()
 
     logging.info("Page with empty referer percent")
@@ -137,6 +163,7 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
     df_feature["pc_page_ref_empty"].fillna(0, inplace=True)
 
     logging.info("E-Commerce features")
+
     """
     PARTE RELATIVA ALLE FEATURE SULL'E-COMMERCE
     """
@@ -144,11 +171,6 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
     cart_actions = ["aggiungi_al_carrello.php"]
     login_operations = ["action=login"]
     internal_search_engine = ["search.html\?q", "search-by-bike.html\?"]
-
-    # TODO: Number of views of pages informing about the store and the trading company -> Non presente
-    # TODO: Number of views of pages with entertainment contents -> Non presente
-    # TODO: Number of other page views -> Da chiarire
-    # TODO: Whether the session ended with a purchase
 
     logging.info("Login actions")
     # Number of login operations (including “Register success” and “Login success”)
@@ -172,12 +194,9 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
     df_feature["has_source"] = df.groupby("session_id")["has_source"].sum() > 0
     df_feature["has_source"] = df_feature["has_source"].astype(int)
 
-    # TODO: Whether the session ended with a purchase
-    # braintree.php?lang = it & payment = yes
-
     logging.info("Product views")
     # Number of views of product description pages -> currency=[a-z A-Z]{3}&size=[0-9 A-Z]{1,3}
-    df["product_views"] = df["request"].str.contains("currency=[a-z A-Z]{3}&size=[0-9 A-Z]{1,3}")
+    df["product_views"] = df["request"].str.contains(r"currency=[a-z A-Z]{3}&size=[0-9 A-Z]{1,3}")
     df_feature["product_views"] = df.groupby("session_id")["product_views"].sum()
 
     logging.info("Condition shipping page read")
@@ -187,9 +206,72 @@ def extract_features(df: pd.DataFrame) -> (pd.DataFrame, np.array):
 
     logging.info("Homepage views count")
     # Number of views of the website’s home page
-    homepage_regex = "^\/[a-z]{2}\/$"
+    # Because of the different languages, the homepage can be 'it/', 'en/' etc.
+    homepage_regex = r"^\/[a-z]{2}\/$"
     df["homepage_views"] = df["request"].str.contains(homepage_regex)
     df_feature["homepage_views"] = df.groupby("session_id")["homepage_views"].sum()
 
-    return df_feature, df[["session_id", "ip", "user_agent"]].groupby(["session_id"]).first().reset_index()
+    return df_feature.join(df[["session_id", "user_agent"]].groupby(["session_id"]).first())
 
+
+def assign_labels(df: pd.DataFrame, n_classes: int) -> pd.DataFrame:
+    """
+    Function that assign a label ['bot' or 'human'] to the class that has the greater number
+    of occurrence of bot/human
+    :param df: pandas DataFrame
+    :param n_classes: number of classes inside the DataFrame
+    :return: pandas DataFrame
+    """
+    map_labels = dict()
+
+    for i in range(n_classes):
+
+        sub_df = df[df.predicted_label == i]
+
+        samples = sub_df.shape[0]
+        bot = sub_df["is_bot"].sum()
+        human = samples - bot
+
+        if bot > human:
+            map_labels[i] = "bot"
+        else:
+            map_labels[i] = "human"
+        continue
+
+    df["predicted_label"] = df["predicted_label"].map(map_labels)
+
+    return df
+
+
+def drop_single_value_columns(df: pd.DataFrame):
+    """
+    Function that drop a list of columns that contains only a single value
+    :param df: pandas Dataframe
+    :return: None
+    """
+    columns_to_drop = list()
+
+    for col in df.columns:
+        unique_val = df[col].nunique()
+        if unique_val == 1:
+            columns_to_drop.append(col)
+
+    df.drop(columns_to_drop, axis=1, inplace=True)
+
+
+def cap_outliers(df: pandas.DataFrame, q: float, columns_to_cap: list) -> pd.DataFrame:
+    """
+    Function that apply a value based on a quantile threshold for all the columns found in 'columns_to_cap'
+    :param df: pandas Dataframe
+    :param q: int -> quantile
+    :param columns_to_cap:
+    :return: pandas Dataframe
+    """
+
+    for col in df.columns:
+        if col in columns_to_cap:
+            threshold = df[col].quantile(q)
+
+            df.loc[df[col] > threshold, col] = threshold
+
+    return df
