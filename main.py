@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os.path
 
 import pandas as pd
 import numpy as np
@@ -26,9 +27,12 @@ FEATURES_LIST = ["session_duration", "requests_count", "mean_request", "total_si
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_path", type=str,
                     help="Input path containing the processed log file")
+parser.add_argument("--plot_output_path", type=str, default=None,
+                    help="Input path containing the processed log file")
 
 args = parser.parse_args()
 DATA_PATH = args.data_path
+PLOT_OUTPUT_PATH = args.plot_output_path
 
 
 if __name__ == "__main__":
@@ -106,7 +110,9 @@ if __name__ == "__main__":
         y_train_true = train_df["true_label"].values
         y_train_pred = train_df["predicted_labels"].values
 
-        plot_confusion_matrix(y_train_true, y_train_pred, f"plots/cm_{n_classes}_train.png")
+        savefig_path = os.path.join(PLOT_OUTPUT_PATH, f"plots/cm_{n_classes}_train.png") \
+            if PLOT_OUTPUT_PATH is not None else None
+        plot_confusion_matrix(y_train_true, y_train_pred, savefig_path)
         logging.info(f"Adjusted Rand score: {adjusted_rand_score(y_train_true, y_train_pred)}")
         logging.info("Predict data")
 
@@ -131,7 +137,9 @@ if __name__ == "__main__":
         y_test_true = pred_df["true_label"].values
         y_test_pred = pred_df["predicted_labels"].values
 
-        plot_confusion_matrix(y_test_true, y_test_pred, f"plots/cm_{n_classes}_predict.png")
+        savefig_path = os.path.join(PLOT_OUTPUT_PATH, f"plots/cm_{n_classes}_predict.png")\
+            if PLOT_OUTPUT_PATH is not None else None
+        plot_confusion_matrix(y_test_true, y_test_pred, savefig_path)
 
         logging.info(f"Adjusted Rand score: {adjusted_rand_score(y_test_true, y_test_pred)}")
 
