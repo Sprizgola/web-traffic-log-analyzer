@@ -11,20 +11,20 @@ from ast import literal_eval
 
 from internal_lib.data_processing import parse_raw_log_data, extract_features
 
-#
-# parser = argparse.ArgumentParser(description="Parse raw log file.")
-# parser.add_argument("--input_path", type=str,
-#                     help="Input path containing the raw log file")
-#
-# parser.add_argument("--output_dir", type=str,
-#                     help="Output directory in which the parsed data will be saved.")
-#
-# args = parser.parse_args()
-#
-# INPUT_PATH = args.input_path
-# OUTPUT_DIR = args.output_dir
-INPUT_PATH = "raw_data/access_log.txt"
-OUTPUT_DIR = "."
+
+parser = argparse.ArgumentParser(description="Parse raw log file.")
+parser.add_argument("--input_path", type=str,
+                    help="Input path containing the raw log file")
+
+parser.add_argument("--output_dir", type=str,
+                    help="Output directory in which the parsed data will be saved.")
+
+args = parser.parse_args()
+
+INPUT_PATH = args.input_path
+OUTPUT_DIR = args.output_dir
+# INPUT_PATH = "raw_data/access_log.txt"
+# OUTPUT_DIR = "."
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -70,6 +70,7 @@ if __name__ == "__main__":
 
     # 2. Extract features
     data = pd.read_csv(os.path.join(OUTPUT_DIR, f"data_processed_{idx}.csv"))
+    # 2.1 Remove the headers of the chunks
     data = data[~(data["ip"] == "ip")]
     df_features = extract_features(data)
 
@@ -82,6 +83,5 @@ if __name__ == "__main__":
 
     # 3. Store parsed dataframe
     df_features.to_csv(f"./parsed_data/parsed_data_{idx}.csv", index=True, index_label="session_id")
-    # df_labels.to_csv(f"./parsed_data/labels_{idx}.csv", index=True, index_label="session_id")
 
     logging.info(f"Execution time: {datetime.now() - start_time}")

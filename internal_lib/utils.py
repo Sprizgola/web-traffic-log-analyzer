@@ -131,10 +131,10 @@ def compute_and_plot_elbow(X: np.array, n_clusters: int):
 
 def print_df_cluster_info(df: pd.DataFrame):
 
-    labels = df["predict_label"].unique()
+    labels = df["predicted_labels"].unique()
 
     for i in labels:
-        sub_df = df[df.predict_label == i]
+        sub_df = df[df.predicted_labels == i]
 
         samples = sub_df.shape[0]
         n_bot = sub_df["is_bot"].sum()

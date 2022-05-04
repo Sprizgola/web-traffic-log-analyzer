@@ -226,7 +226,7 @@ def assign_labels(df: pd.DataFrame, n_classes: int) -> pd.DataFrame:
 
     for i in range(n_classes):
 
-        sub_df = df[df.predicted_label == i]
+        sub_df = df[df.predicted_labels == i]
 
         samples = sub_df.shape[0]
         bot = sub_df["is_bot"].sum()
@@ -238,7 +238,7 @@ def assign_labels(df: pd.DataFrame, n_classes: int) -> pd.DataFrame:
             map_labels[i] = "human"
         continue
 
-    df["predicted_label"] = df["predicted_label"].map(map_labels)
+    df["predicted_labels"] = df["predicted_labels"].map(map_labels)
 
     return df
 
