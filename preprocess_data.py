@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 
 # Bot UA regex: https://gist.github.com/dvlop/fca36213ad6237891609e1e038a3bbc1
-with open("user_agents.txt", "r") as f:
+with open("user_agents_regex.txt", "r") as f:
     ua_list = literal_eval(f.read())
     ua_list = [x.lower() for x in ua_list]
 
