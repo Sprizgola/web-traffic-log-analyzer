@@ -23,8 +23,6 @@ args = parser.parse_args()
 
 INPUT_PATH = args.input_path
 OUTPUT_DIR = args.output_dir
-# INPUT_PATH = "raw_data/access_log.txt"
-# OUTPUT_DIR = "."
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
