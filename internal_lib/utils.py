@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples, silhouette_score
 
 
-def compute_and_plot_silhouette(X: np.array, n_clusters: int):
+def compute_and_plot_silhouette(km: KMeans, X: np.array, n_clusters: int):
     for n_clusters in range(2, n_clusters + 1):
         # Create a subplot with 1 row and 2 columns
         fig, (ax1, ax2) = plt.subplots(1, 2)
@@ -23,7 +23,7 @@ def compute_and_plot_silhouette(X: np.array, n_clusters: int):
 
         # Initialize the clusterer with n_clusters value and a random generator
         # seed of 10 for reproducibility.
-        clusterer = KMeans(n_clusters=n_clusters, random_state=10)
+        clusterer = km
         cluster_labels = clusterer.fit_predict(X)
 
         # The silhouette_score gives the average value for all the samples.
@@ -41,7 +41,7 @@ def compute_and_plot_silhouette(X: np.array, n_clusters: int):
         sample_silhouette_values = silhouette_samples(X, cluster_labels)
 
         y_lower = 10
-        for i in range(n_clusters):
+        for i in range(n_clusters, n_clusters):
             # Aggregate the silhouette scores for samples belonging to
             # cluster i, and sort them
             ith_cluster_silhouette_values = sample_silhouette_values[cluster_labels == i]
@@ -145,6 +145,3 @@ def print_df_cluster_info(df: pd.DataFrame):
               f"Perc. samples: {samples/df.shape[0]*100:.4f}\n"
               f"Perc. bot: {n_bot/samples*100:.4f}\n"
               f"Perc. users: {not_bot/samples*100:.4f}")
-
-        # for col in sub_df.columns:
-        #     print(f"Col: {col} - Mean: {sub_df[col].mean():.4f} - Min: {sub_df[col].min():.2f} - Max: {sub_df[col].max():.4f}")

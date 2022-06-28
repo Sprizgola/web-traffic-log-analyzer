@@ -8,11 +8,11 @@ import numpy as np
 from datetime import datetime
 
 from internal_lib.data_processing import cap_outliers, drop_single_value_columns, assign_labels
-from internal_lib.utils import print_df_cluster_info
+from internal_lib.utils import print_df_cluster_info, compute_and_plot_silhouette
 from internal_lib.data_visualization import plot_confusion_matrix
 
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import adjusted_rand_score
+from sklearn.metrics import adjusted_rand_score, homogeneity_score, completeness_score, v_measure_score
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
 
@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--data_path", type=str,
                     help="Input path containing the processed log file")
 parser.add_argument("--plot_output_path", type=str, default=None,
-                    help="Input path containing the processed log file")
+                    help="Output path to save the plots")
 
 args = parser.parse_args()
 DATA_PATH = args.data_path
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42, stratify=y)
 
-    clusters_range = [5, 50, 700]
+    clusters_range = [5, 50, 700, 1000]
 
     logging.info("Start training")
 
