@@ -143,5 +143,9 @@ if __name__ == "__main__":
 
         logging.info(f"Adjusted Rand score: {adjusted_rand_score(y_test_true, y_test_pred)}")
 
+        print(f"Homogeneity score: {homogeneity_score(y_test_true, y_test_pred)}")
+        print(f"Completeness score: {completeness_score(y_test_true, y_test_pred)}")
+        print(f"V score: {v_measure_score(y_test_true, y_test_pred)}")
+
     logging.info(f"Execution time: {datetime.now() - start_time}")
 
